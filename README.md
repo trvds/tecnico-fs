@@ -1,2 +1,4 @@
 # tecnico-fs
-1º Projeto de SO 2021/22 - Adding features to a File System
+🇵🇹 - Projeto de Sistemas Operativos, 2021/22.
+
+🇬🇧 - Operating Systems project, 2021/22.
