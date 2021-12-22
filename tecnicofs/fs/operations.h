@@ -3,7 +3,6 @@
 
 #include "config.h"
 #include "state.h"
-#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>

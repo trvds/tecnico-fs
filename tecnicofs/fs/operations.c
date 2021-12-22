@@ -202,12 +202,16 @@ int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
     }
 
     int dest_file = open(dest_path, O_WRONLY);
-    if(dest_file < 0)
+    if(dest_file < 0){
         return -1;
+    }
 
     if (write(dest_file, buffer, source_size) != size){
         return -1;
     }
+
+    tfs_close(source_inumber);
+    close(dest_file);
 
     return 0;
 }
