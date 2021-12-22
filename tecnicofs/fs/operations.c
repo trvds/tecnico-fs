@@ -197,7 +197,7 @@ int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
     size_t source_size = inode->i_size;
 
     ssize_t size = tfs_read(source_inumber, buffer, source_size);
-    if (size == -1) {
+    if (size < 0) {
         return -1;
     }
 
@@ -210,8 +210,12 @@ int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
         return -1;
     }
 
-    tfs_close(source_inumber);
-    close(dest_file);
-
+    if(tfs_close(source_inumber) < 0){
+        return -1;
+    }
+    
+    if(close(dest_file) < 0){
+        return -1;
+    }
     return 0;
 }
