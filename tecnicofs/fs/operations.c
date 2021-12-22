@@ -174,3 +174,40 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
 
     return (ssize_t)to_read;
 }
+
+
+int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
+    
+    /* Checks if the path name is valid */
+    if (!valid_pathname(source_path)) {
+        return -1;
+    }
+
+    int source_inumber = tfs_open(source_path, TFS_O_CREAT);
+    if (source_inumber == -1){
+        return -1;
+    }
+    
+    void *buffer = NULL;
+    inode_t *inode = inode_get(source_inumber);
+    if (inode == NULL){
+        return -1;
+    }
+
+    size_t source_size = inode->i_size;
+
+    ssize_t size = tfs_read(source_inumber, buffer, source_size);
+    if (size == -1) {
+        return -1;
+    }
+
+    int dest_file = open(dest_path, O_WRONLY);
+    if(dest_file < 0)
+        return -1;
+
+    if (write(dest_file, buffer, source_size) != size){
+        return -1;
+    }
+
+    return 0;
+}

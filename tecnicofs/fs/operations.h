@@ -4,7 +4,10 @@
 #include "config.h"
 #include "state.h"
 #include <sys/types.h>
-
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 enum {
     TFS_O_CREAT = 0b001,
     TFS_O_TRUNC = 0b010,
