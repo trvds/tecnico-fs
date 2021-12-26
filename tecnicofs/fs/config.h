@@ -12,4 +12,5 @@
 
 #define DELAY (5000)
 
+#define DIRECT_BLOCKS_QUANTITY (10)
 #endif // CONFIG_H

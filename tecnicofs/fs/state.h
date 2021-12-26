@@ -23,7 +23,8 @@ typedef enum { T_FILE, T_DIRECTORY } inode_type;
 typedef struct {
     inode_type i_node_type;
     size_t i_size;
-    int i_data_block;
+    int i_data_block[DIRECT_BLOCKS_QUANTITY];
+    int i_index_block;
     /* in a real FS, more fields would exist here */
 } inode_t;
 
@@ -44,6 +45,7 @@ void state_destroy();
 
 int inode_create(inode_type n_type);
 int inode_delete(int inumber);
+int inode_datablocks_delete(inode_t i_node);
 inode_t *inode_get(int inumber);
 
 int clear_dir_entry(int inumber, int sub_inumber);

@@ -104,6 +104,9 @@ int inode_create(inode_type n_type) {
             if (n_type == T_DIRECTORY) {
                 /* Initializes directory (filling its block with empty
                  * entries, labeled with inumber==-1) */
+                
+                for(int i = 0; i < DIRECT_BLOCKS_QUANTITY; i++)
+                    inode_table[inumber].i_data_block[i] = -1;
                 int b = data_block_alloc();
                 if (b == -1) {
                     freeinode_ts[inumber] = FREE;
@@ -111,7 +114,8 @@ int inode_create(inode_type n_type) {
                 }
 
                 inode_table[inumber].i_size = BLOCK_SIZE;
-                inode_table[inumber].i_data_block = b;
+                inode_table[inumber].i_data_block[0] = b;
+                inode_table[inumber].i_index_block = -1;
 
                 dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(b);
                 if (dir_entry == NULL) {
@@ -125,7 +129,19 @@ int inode_create(inode_type n_type) {
             } else {
                 /* In case of a new file, simply sets its size to 0 */
                 inode_table[inumber].i_size = 0;
-                inode_table[inumber].i_data_block = -1;
+                for(int i = 0; i < DIRECT_BLOCKS_QUANTITY; i++)
+                    inode_table[inumber].i_data_block[i] = -1;
+
+                inode_table[inumber].i_index_block = data_block_alloc();
+                void *index_block = data_block_get(inode_table[inumber].i_index_block);
+                if (index_block == NULL) {
+                    return -1;
+                }
+                int *array = (int*) malloc(BLOCK_SIZE);
+                for(int i = 0; i < BLOCK_SIZE/sizeof(int); i++)
+                    array[i] = -1;
+                memcpy(index_block, array, BLOCK_SIZE);
+                free(array);
             }
             return inumber;
         }
@@ -150,12 +166,36 @@ int inode_delete(int inumber) {
 
     freeinode_ts[inumber] = FREE;
 
-    if (inode_table[inumber].i_size > 0) {
-        if (data_block_free(inode_table[inumber].i_data_block) == -1) {
+    return inode_datablocks_delete(inode_table[inumber]);
+}
+
+
+int inode_datablocks_delete(inode_t i_node){
+    for(int i = 0; i < DIRECT_BLOCKS_QUANTITY; i++){
+        if(i_node.i_data_block[i] == -1){
+            continue;
+        }
+        if (data_block_free(i_node.i_data_block[i]) == -1) {
             return -1;
         }
     }
 
+    int *index_block = data_block_get(i_node.i_index_block);
+    if (index_block == NULL) {
+        return -1;
+    }
+        
+    for(int i = 0; i < BLOCK_SIZE/sizeof(int); i++){
+        if(index_block[i] == -1){
+            continue;
+        }
+        if (data_block_free(index_block[i]) == -1) {
+            return -1;
+        }
+    }
+    if (data_block_free(i_node.i_index_block) == -1) {
+        return -1;
+    }
     return 0;
 }
 
@@ -198,7 +238,7 @@ int add_dir_entry(int inumber, int sub_inumber, char const *sub_name) {
 
     /* Locates the block containing the directory's entries */
     dir_entry_t *dir_entry =
-        (dir_entry_t *)data_block_get(inode_table[inumber].i_data_block);
+        (dir_entry_t *)data_block_get(inode_table[inumber].i_data_block[0]);
     if (dir_entry == NULL) {
         return -1;
     }
@@ -231,7 +271,7 @@ int find_in_dir(int inumber, char const *sub_name) {
 
     /* Locates the block containing the directory's entries */
     dir_entry_t *dir_entry =
-        (dir_entry_t *)data_block_get(inode_table[inumber].i_data_block);
+        (dir_entry_t *)data_block_get(inode_table[inumber].i_data_block[0]);
     if (dir_entry == NULL) {
         return -1;
     }

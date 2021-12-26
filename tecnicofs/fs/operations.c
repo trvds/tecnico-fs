@@ -57,7 +57,7 @@ int tfs_open(char const *name, int flags) {
         /* Trucate (if requested) */
         if (flags & TFS_O_TRUNC) {
             if (inode->i_size > 0) {
-                if (data_block_free(inode->i_data_block) == -1) {
+                if (inode_datablocks_delete(*inode) == -1) {
                     return -1;
                 }
                 inode->i_size = 0;
@@ -110,34 +110,68 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         return -1;
     }
 
-    /* Determine how many bytes to write */
-    if (to_write + file->of_offset > BLOCK_SIZE) {
-        to_write = BLOCK_SIZE - file->of_offset;
+    if ((int)to_write < 0){
+        return -1;
     }
 
-    if (to_write > 0) {
-        if (inode->i_size == 0) {
-            /* If empty file, allocate new block */
-            inode->i_data_block = data_block_alloc();
+    size_t writen = 0;
+    int index = ((int)file->of_offset)/BLOCK_SIZE;
+
+    for(; index < DIRECT_BLOCKS_QUANTITY && writen < to_write; index++){
+        size_t to_write_in_block = BLOCK_SIZE - (file->of_offset%BLOCK_SIZE);
+
+        if(to_write_in_block > to_write - writen)
+            to_write_in_block = to_write - writen;
+
+        if (inode->i_data_block[index] == -1) {
+            inode->i_data_block[index] = data_block_alloc();
         }
 
-        void *block = data_block_get(inode->i_data_block);
+        void *block = data_block_get(inode->i_data_block[index]);
         if (block == NULL) {
             return -1;
         }
 
-        /* Perform the actual write */
-        memcpy(block + file->of_offset, buffer, to_write);
-
-        /* The offset associated with the file handle is
-         * incremented accordingly */
-        file->of_offset += to_write;
-        if (file->of_offset > inode->i_size) {
-            inode->i_size = file->of_offset;
-        }
+        memcpy(block + file->of_offset%BLOCK_SIZE, buffer + writen, to_write_in_block);
+        writen += to_write_in_block;
+        file->of_offset += writen;
     }
 
-    return (ssize_t)to_write;
+    int *index_block = data_block_get(inode->i_index_block);
+    if (index_block == NULL) {
+        return -1;
+    }
+
+    if (index > DIRECT_BLOCKS_QUANTITY){
+        index -= DIRECT_BLOCKS_QUANTITY;
+    }
+    else{
+        index = 0;
+    }
+
+    for(; index < BLOCK_SIZE/sizeof(int) && writen < to_write; index++){
+        size_t to_write_in_block = BLOCK_SIZE - (file->of_offset%BLOCK_SIZE);
+
+        if(to_write_in_block > to_write - writen)
+            to_write_in_block = to_write - writen;
+
+        if (index_block[index] == -1) {
+            index_block[index] = data_block_alloc();
+        }
+
+        void *block = data_block_get(index_block[index]);
+        if (block == NULL) {
+            return -1;
+        }
+
+        memcpy(block + file->of_offset%BLOCK_SIZE, buffer + writen, to_write_in_block);
+        writen += to_write_in_block;
+        file->of_offset += writen;
+    }
+
+    inode->i_size = writen;
+
+    return (ssize_t)writen;
 }
 
 
@@ -154,22 +188,48 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
     }
 
     /* Determine how many bytes to read */
-    size_t to_read = inode->i_size - file->of_offset;
-    if (to_read > len) {
-        to_read = len;
-    }
+    size_t to_read = len;
+    
+    size_t read = 0;
+    int index = (int)file->of_offset/BLOCK_SIZE;
 
-    if (to_read > 0) {
-        void *block = data_block_get(inode->i_data_block);
+    for(; index < DIRECT_BLOCKS_QUANTITY && read < to_read; index++){
+        size_t to_read_in_block = BLOCK_SIZE - (file->of_offset%BLOCK_SIZE);
+
+        if(to_read_in_block > to_read-read)
+            to_read_in_block = to_read-read;
+
+        void *block = data_block_get(inode->i_data_block[index]);
         if (block == NULL) {
             return -1;
         }
 
-        /* Perform the actual read */
-        memcpy(buffer, block + file->of_offset, to_read);
-        /* The offset associated with the file handle is
-         * incremented accordingly */
-        file->of_offset += to_read;
+        memcpy(buffer + read, block + file->of_offset%BLOCK_SIZE, to_read_in_block);
+        read += to_read_in_block;
+        file->of_offset += read;
+    }
+
+    int *index_block = data_block_get(inode->i_index_block);
+    if (index_block == NULL) {
+        return -1;
+    }
+
+    index -= DIRECT_BLOCKS_QUANTITY;
+
+    for(; index < BLOCK_SIZE/sizeof(int) && read < to_read; index++){
+        size_t to_read_in_block = BLOCK_SIZE - (file->of_offset%BLOCK_SIZE);
+
+        if(to_read_in_block > to_read)
+            to_read_in_block = to_read;
+
+        void *block = data_block_get(index_block[index]);
+        if (block == NULL) {
+            return -1;
+        }
+
+        memcpy(buffer + read, block + file->of_offset%BLOCK_SIZE, to_read_in_block);
+        read += to_read_in_block;
+        file->of_offset += read;
     }
 
     return (ssize_t)to_read;
@@ -179,7 +239,7 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
 int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
     
     /* Checks if the path name is valid */
-    if (!valid_pathname(source_path)) {
+    if (tfs_lookup(source_path) < 0) {
         return -1;
     }
 
@@ -187,26 +247,27 @@ int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
     if (source_inumber == -1){
         return -1;
     }
-    
-    void *buffer = NULL;
+
     inode_t *inode = inode_get(source_inumber);
+
     if (inode == NULL){
         return -1;
     }
-
     size_t source_size = inode->i_size;
+
+    void *buffer = malloc(source_size);
 
     ssize_t size = tfs_read(source_inumber, buffer, source_size);
     if (size < 0) {
         return -1;
     }
 
-    int dest_file = open(dest_path, O_WRONLY);
+    int dest_file = open(dest_path, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
     if(dest_file < 0){
         return -1;
-    }
+    }   
 
-    if (write(dest_file, buffer, source_size) != size){
+    if (write(dest_file, buffer, (size_t)size) != size){
         return -1;
     }
 
@@ -217,5 +278,8 @@ int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
     if(close(dest_file) < 0){
         return -1;
     }
+
+    free(buffer);
+
     return 0;
 }
