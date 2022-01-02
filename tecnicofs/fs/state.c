@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 
 /* Persistent FS state  (in reality, it should be maintained in secondary
  * memory; for simplicity, this project maintains it in primary memory) */
@@ -100,7 +101,9 @@ int inode_create(inode_type n_type) {
             freeinode_ts[inumber] = TAKEN;
             insert_delay(); // simulate storage access delay (to i-node)
             inode_table[inumber].i_node_type = n_type;
-
+            if (pthread_rwlock_init(&inode_table[inumber].rwl, NULL) != 0){
+                return -1;
+            }
             if (n_type == T_DIRECTORY) {
                 /* Initializes directory (filling its block with empty
                  * entries, labeled with inumber==-1) */
@@ -165,7 +168,9 @@ int inode_delete(int inumber) {
     }
 
     freeinode_ts[inumber] = FREE;
-
+    if (pthread_rwlock_destroy(&inode_table[inumber].rwl) != 0){
+        return -1;
+    }
     return inode_datablocks_delete(inode_table[inumber]);
 }
 

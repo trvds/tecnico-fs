@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <pthread.h>
+
 enum {
     TFS_O_CREAT = 0b001,
     TFS_O_TRUNC = 0b010,
