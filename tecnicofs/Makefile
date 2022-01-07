@@ -14,14 +14,14 @@ INCLUDES = $(addprefix -I, $(INCLUDE_DIRS))
 SOURCES  := $(wildcard */*.c)
 HEADERS  := $(wildcard */*.h)
 OBJECTS  := $(SOURCES:.c=.o)
-TARGET_EXECS := tests/test1 tests/copy_to_external_simple tests/copy_to_external_errors tests/write_10_blocks_spill tests/write_10_blocks_simple tests/write_more_than_10_blocks_simple tests/write_3_files_threaded tests/threadtest2
+TARGET_EXECS := tests/test1 tests/copy_to_external_simple tests/copy_to_external_errors tests/write_10_blocks_spill tests/write_10_blocks_simple tests/write_more_than_10_blocks_simple tests/write_3_files_threaded tests/threadtest2 tests/mt_test
 
 # VPATH is a variable used by Makefile which finds *sources* and makes them available throughout the codebase
 # vpath %.h <DIR> tells make to look for header files in <DIR>
 vpath # clears VPATH
 vpath %.h $(INCLUDE_DIRS)
 
-CFLAGS = -std=gnu11 -D_POSIX_C_SOURCE=200809L
+CFLAGS = -std=c11 -D_POSIX_C_SOURCE=200809L
 CFLAGS += $(INCLUDES)
 
 # Warnings
@@ -41,7 +41,14 @@ else
   CFLAGS += -O3
 endif
 
+# optional enabling of fsanitize symbols
+ifeq ($(strip $(FSANITIZE)), yes)
+	LDLIBS = -ltsan -lpthread
+	CFLAGS += -fsanitize=thread
+endif
+
 LDFLAGS = -pthread
+
 
 # A phony target is one that is not really the name of a file
 # https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
@@ -74,6 +81,10 @@ tests/write_10_blocks_simple: tests/write_10_blocks_simple.o fs/operations.o fs/
 tests/write_more_than_10_blocks_simple: tests/write_more_than_10_blocks_simple.o fs/operations.o fs/state.o
 tests/write_3_files_threaded: tests/write_3_files_threaded.o fs/operations.o fs/state.o
 tests/threadtest2: tests/threadtest2.o fs/operations.o fs/state.o
+tests/mt_test1: tests/mt_test1.o fs/operations.o fs/state.o
+tests/mt_test2: tests/mt_test2.o fs/operations.o fs/state.o
+tests/mt_test2: tests/mt_test2.o fs/operations.o fs/state.o
+tests/mt_test3: tests/mt_test3.o fs/operations.o fs/state.o
 
 clean:
 	rm -f $(OBJECTS) $(TARGET_EXECS)
