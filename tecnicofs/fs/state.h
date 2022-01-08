@@ -26,7 +26,6 @@ typedef struct {
     size_t i_size;
     int i_data_block[DIRECT_BLOCKS_QUANTITY];
     int i_index_block;
-    pthread_rwlock_t rwl;
     /* in a real FS, more fields would exist here */
 } inode_t;
 
@@ -49,6 +48,7 @@ int inode_create(inode_type n_type);
 int inode_delete(int inumber);
 int inode_datablocks_delete(inode_t i_node);
 inode_t *inode_get(int inumber);
+pthread_rwlock_t *inode_lock_get(int inumber);
 
 int clear_dir_entry(int inumber, int sub_inumber);
 int add_dir_entry(int inumber, int sub_inumber, char const *sub_name);

@@ -41,7 +41,7 @@ int tfs_lookup(char const *name) {
 int tfs_open(char const *name, int flags) {
     int inum;
     size_t offset;
-
+    pthread_rwlock_t *lock;
     /* Checks if the path name is valid */
     if (!valid_pathname(name)) {
         return -1;
@@ -49,15 +49,13 @@ int tfs_open(char const *name, int flags) {
 
     inum = tfs_lookup(name);
     if (inum >= 0) {
+        lock = inode_lock_get(inum);
+        pthread_rwlock_wrlock(lock);
         /* The file already exists */
         inode_t *inode = inode_get(inum);
-        pthread_rwlock_t lock = inode->rwl;
-
         if (inode == NULL) {
             return -1;
         }
-        
-        pthread_rwlock_wrlock(&lock);
         /* Trucate (if requested) */
         if (flags & TFS_O_TRUNC) {
             if (inode->i_size > 0) {
@@ -73,11 +71,12 @@ int tfs_open(char const *name, int flags) {
         } else {
             offset = 0;
         }
-        pthread_rwlock_unlock(&lock);
     } else if (flags & TFS_O_CREAT) {
         /* The file doesn't exist; the flags specify that it should be created*/
         /* Create inode */
         inum = inode_create(T_FILE);
+        lock = inode_lock_get(inum);
+        pthread_rwlock_wrlock(lock);
         if (inum == -1) {
             return -1;
         }
@@ -90,7 +89,7 @@ int tfs_open(char const *name, int flags) {
     } else {
         return -1;
     }
-
+    pthread_rwlock_unlock(lock);
     /* Finally, add entry to the open file table and
      * return the corresponding handle */
     return add_to_open_file_table(inum, offset);
@@ -115,14 +114,13 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         return -1;
     }
 
+    pthread_rwlock_t *lock = inode_lock_get(file->of_inumber);
+    pthread_rwlock_wrlock(lock);
+
     if ((int)to_write < 0){
         return -1;
     }
 
-    pthread_rwlock_t rwlock = inode->rwl;
-        if (pthread_rwlock_wrlock(&rwlock) != 0){
-        return -1;
-    }
     size_t writen = 0;
     int index = ((int)file->of_offset)/BLOCK_SIZE;
 
@@ -178,10 +176,7 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         file->of_offset += writen;
     }
     inode->i_size = writen;
-    if (pthread_rwlock_unlock(&rwlock) != 0){
-        return -1;
-    }
-
+    pthread_rwlock_unlock(lock);
     return (ssize_t)writen;
 }
 
@@ -198,13 +193,11 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
         return -1;
     }
 
+    pthread_rwlock_t *lock = inode_lock_get(file->of_inumber);
+    pthread_rwlock_wrlock(lock);
+
     /* Determine how many bytes to read */
     size_t to_read = len;
-    
-    pthread_rwlock_t rwlock = inode->rwl;
-    if (pthread_rwlock_rdlock(&rwlock) != 0){
-        return -1;
-    }
 
     size_t read = 0;
     int index = (int)file->of_offset/BLOCK_SIZE;
@@ -248,9 +241,8 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
         file->of_offset += read;
     }
 
-    if (pthread_rwlock_unlock(&rwlock) != 0){
-        return -1;
-    }
+    pthread_rwlock_unlock(lock);
+
     return (ssize_t)to_read;
 }
 

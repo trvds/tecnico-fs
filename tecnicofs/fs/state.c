@@ -12,6 +12,7 @@
 
 /* I-node table */
 static inode_t inode_table[INODE_TABLE_SIZE];
+static pthread_rwlock_t inode_rwlock_table[INODE_TABLE_SIZE];
 static char freeinode_ts[INODE_TABLE_SIZE];
 
 /* Data blocks */
@@ -77,6 +78,10 @@ void state_init() {
     for (size_t i = 0; i < MAX_OPEN_FILES; i++) {
         free_open_file_entries[i] = FREE;
     }
+
+    for (int i = 0; i < INODE_TABLE_SIZE; i++) {
+        pthread_rwlock_init(inode_lock_get(i), NULL);
+    }
 }
 
 void state_destroy() { /* nothing to do */
@@ -94,16 +99,14 @@ int inode_create(inode_type n_type) {
         if ((inumber * (int) sizeof(allocation_state_t) % BLOCK_SIZE) == 0) {
             insert_delay(); // simulate storage access delay (to freeinode_ts)
         }
-
+        
         /* Finds first free entry in i-node table */
         if (freeinode_ts[inumber] == FREE) {
+            pthread_rwlock_wrlock(inode_lock_get(inumber));
             /* Found a free entry, so takes it for the new i-node*/
             freeinode_ts[inumber] = TAKEN;
             insert_delay(); // simulate storage access delay (to i-node)
             inode_table[inumber].i_node_type = n_type;
-            if (pthread_rwlock_init(&inode_table[inumber].rwl, NULL) != 0){
-                return -1;
-            }
             if (n_type == T_DIRECTORY) {
                 /* Initializes directory (filling its block with empty
                  * entries, labeled with inumber==-1) */
@@ -146,6 +149,7 @@ int inode_create(inode_type n_type) {
                 memcpy(index_block, array, BLOCK_SIZE);
                 free(array);
             }
+            pthread_rwlock_unlock(inode_lock_get(inumber));
             return inumber;
         }
     }
@@ -166,11 +170,9 @@ int inode_delete(int inumber) {
     if (!valid_inumber(inumber) || freeinode_ts[inumber] == FREE) {
         return -1;
     }
-
+    pthread_rwlock_wrlock(inode_lock_get(inumber));
     freeinode_ts[inumber] = FREE;
-    if (pthread_rwlock_destroy(&inode_table[inumber].rwl) != 0){
-        return -1;
-    }
+    pthread_rwlock_unlock(inode_lock_get(inumber));
     return inode_datablocks_delete(inode_table[inumber]);
 }
 
@@ -217,6 +219,15 @@ inode_t *inode_get(int inumber) {
 
     insert_delay(); // simulate storage access delay to i-node
     return &inode_table[inumber];
+}
+
+
+pthread_rwlock_t* inode_lock_get(int inumber){
+    if (!valid_inumber(inumber)) {
+        return NULL;
+    }
+
+    return &inode_rwlock_table[inumber];
 }
 
 /*
