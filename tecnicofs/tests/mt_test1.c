@@ -30,18 +30,15 @@ char *randstring(size_t length) {
 void *fnWrite(void *arg){
     (void)arg;
     
-    printf("Thread intialized\n");
     char *path = "/f1";
     size_t length = (size_t)((rand() % (UPPER - LOWER + 1)) + LOWER);
     char *input = randstring(length);
-    printf("Length of input: %ld\n", length);
     
     int fd = tfs_open(path, TFS_O_CREAT);
     assert(fd != -1);
 
     assert(tfs_write(fd, input, length) == length);
     assert(tfs_close(fd) != -1);
-    printf("Threaded ended\n");
     return NULL;
 }
 
@@ -57,12 +54,12 @@ int main() {
     }
 
     for(int i = 0; i < NUMBER_OF_THREADS; i++){
-        printf("Threaded no. %d joined\n", i);
-        pthread_join(tid[i], NULL);
+       if (pthread_join(tid[i], NULL) != 0)
+            exit(EXIT_FAILURE);
     }
 
+    printf("Successful test.\n");
 
-    printf("Test ended\n");
 
     return 0;
 }

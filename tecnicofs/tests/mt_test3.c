@@ -10,7 +10,6 @@
 
 void *fnRead(void* arg){
     (void)arg;
-    printf("Thread intialized\n");
     char *path = "/f1";
     char input[SIZE];
     char output[SIZE];
@@ -24,7 +23,6 @@ void *fnRead(void* arg){
     assert(tfs_close(fd) != -1);
     
     assert(memcmp(input, output, SIZE) == 0);
-    printf("Threaded ended\n");
     return NULL;
 }
 
@@ -49,11 +47,11 @@ int main() {
     }
 
     for(int i = 0; i < NUMBER_OF_THREADS; i++){
-        printf("Threaded no. %d joined\n", i);
-        pthread_join(tid[i], NULL);
+       if (pthread_join(tid[i], NULL) != 0)
+            exit(EXIT_FAILURE);
     }
-    
-    printf("Test ended\n");
+
+    printf("Successful test.\n");
 
     return 0;
 }
