@@ -4,7 +4,7 @@
 #include <time.h>
 #include <stdlib.h>
 
-#define NUMBER_OF_THREADS 100
+#define NUMBER_OF_THREADS 20
 #define UPPER 20
 #define LOWER 1
 
