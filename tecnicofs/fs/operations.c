@@ -197,7 +197,12 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
     pthread_rwlock_wrlock(lock);
 
     /* Determine how many bytes to read */
-    size_t to_read = len;
+    size_t to_read;
+    if (len < inode->i_size){
+        to_read = len;
+    } else {
+        to_read = inode->i_size;
+    }
 
     size_t read = 0;
     int index = (int)file->of_offset/BLOCK_SIZE;
