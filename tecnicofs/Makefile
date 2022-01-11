@@ -41,9 +41,11 @@ else
   CFLAGS += -O3
 endif
 
+LDLIBS = -ltsan -lpthread
+
+
 # optional enabling of fsanitize symbols
 ifeq ($(strip $(FSANITIZE)), yes)
-	LDLIBS = -ltsan -lpthread
 	CFLAGS += -fsanitize=thread
 endif
 
