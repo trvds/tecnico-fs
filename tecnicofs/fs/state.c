@@ -179,11 +179,11 @@ int inode_delete(int inumber) {
     // simulate storage access delay (to i-node and freeinode_ts)
     insert_delay();
     insert_delay();
-
+    pthread_rwlock_wrlock(inode_lock_get(inumber));
     if (!valid_inumber(inumber) || freeinode_ts[inumber] == FREE) {
+            pthread_rwlock_unlock(inode_lock_get(inumber));        
         return -1;
     }
-    pthread_rwlock_wrlock(inode_lock_get(inumber));
     freeinode_ts[inumber] = FREE;
     pthread_rwlock_unlock(inode_lock_get(inumber));
     return inode_datablocks_delete(inode_table[inumber]);
@@ -395,11 +395,14 @@ int add_to_open_file_table(int inumber, size_t offset) {
  * Returns 0 is success, -1 otherwise
  */
 int remove_from_open_file_table(int fhandle) {
+    pthread_mutex_lock(&open_file_table_lock);
     if (!valid_file_handle(fhandle) ||
         free_open_file_entries[fhandle] != TAKEN) {
+        pthread_mutex_unlock(&open_file_table_lock);
         return -1;
     }
     free_open_file_entries[fhandle] = FREE;
+    pthread_mutex_unlock(&open_file_table_lock);
     return 0;
 }
 
