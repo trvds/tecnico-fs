@@ -259,7 +259,7 @@ int tfs_copy_to_external_fs(char const *source_path, char const *dest_path){
         return -1;
     }
 
-    int source_inumber = tfs_open(source_path, TFS_O_CREAT);
+    int source_inumber = tfs_open(source_path, 0);
     if (source_inumber == -1){
         return -1;
     }
