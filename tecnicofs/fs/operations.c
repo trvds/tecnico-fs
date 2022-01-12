@@ -41,7 +41,7 @@ int tfs_lookup(char const *name) {
 int tfs_open(char const *name, int flags) {
     int inum;
     size_t offset;
-    pthread_rwlock_t *lock;
+
     /* Checks if the path name is valid */
     if (!valid_pathname(name)) {
         return -1;
@@ -49,9 +49,8 @@ int tfs_open(char const *name, int flags) {
 
     inum = tfs_lookup(name);
     if (inum >= 0) {
-        lock = inode_lock_get(inum);
-        pthread_rwlock_wrlock(lock);
         /* The file already exists */
+        pthread_rwlock_wrlock(inode_lock_get(inum));   
         inode_t *inode = inode_get(inum);
         if (inode == NULL) {
             return -1;
@@ -59,7 +58,8 @@ int tfs_open(char const *name, int flags) {
         /* Trucate (if requested) */
         if (flags & TFS_O_TRUNC) {
             if (inode->i_size > 0) {
-                if (inode_datablocks_delete(*inode) == -1) {
+                if (inode_datablocks_erase(*inode) == -1) {
+                    pthread_rwlock_unlock(inode_lock_get(inum));
                     return -1;
                 }
                 inode->i_size = 0;
@@ -75,21 +75,21 @@ int tfs_open(char const *name, int flags) {
         /* The file doesn't exist; the flags specify that it should be created*/
         /* Create inode */
         inum = inode_create(T_FILE);
-        lock = inode_lock_get(inum);
-        pthread_rwlock_wrlock(lock);
+        pthread_rwlock_wrlock(inode_lock_get(inum));
         if (inum == -1) {
             return -1;
         }
         /* Add entry in the root directory */
         if (add_dir_entry(ROOT_DIR_INUM, inum, name + 1) == -1) {
             inode_delete(inum);
+            pthread_rwlock_unlock(inode_lock_get(inum));
             return -1;
         }
         offset = 0;
     } else {
         return -1;
     }
-    pthread_rwlock_unlock(lock);
+    pthread_rwlock_unlock(inode_lock_get(inum));
     /* Finally, add entry to the open file table and
      * return the corresponding handle */
     return add_to_open_file_table(inum, offset);

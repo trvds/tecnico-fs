@@ -46,7 +46,7 @@ void state_destroy();
 
 int inode_create(inode_type n_type);
 int inode_delete(int inumber);
-int inode_datablocks_delete(inode_t i_node);
+int inode_datablocks_erase(inode_t i_node);
 inode_t *inode_get(int inumber);
 pthread_rwlock_t *inode_lock_get(int inumber);
 

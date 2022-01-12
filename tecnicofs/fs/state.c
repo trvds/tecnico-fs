@@ -185,15 +185,19 @@ int inode_delete(int inumber) {
         return -1;
     }
     freeinode_ts[inumber] = FREE;
+    if (inode_datablocks_erase(inode_table[inumber]) != 0 || data_block_free(inode_get(inumber)->i_index_block) != 0)
+        return -1;
     pthread_rwlock_unlock(inode_lock_get(inumber));
-    return inode_datablocks_delete(inode_table[inumber]);
+    return 0;
 }
 
 
-int inode_datablocks_delete(inode_t i_node){
+
+int inode_datablocks_erase(inode_t i_node){
     for(int i = 0; i < DIRECT_BLOCKS_QUANTITY; i++){
         if(i_node.i_data_block[i] == -1){
-            continue;
+            i_node.i_size = 0;
+            break;
         }
         if (data_block_free(i_node.i_data_block[i]) == -1) {
             return -1;
@@ -212,10 +216,10 @@ int inode_datablocks_delete(inode_t i_node){
         if (data_block_free(index_block[i]) == -1) {
             return -1;
         }
+        index_block[i] = -1;
     }
-    if (data_block_free(i_node.i_index_block) == -1) {
-        return -1;
-    }
+    i_node.i_size = 0;
+
     return 0;
 }
 
