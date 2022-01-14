@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <string.h>
 
-#define SIZE 20000
+#define SIZE 45056 // 256 x 4 x 11
 #define N 5
 #define NUMBER_OF_THREADS 20 // Não pode ser mais que 20 pela limitação do file system de ter 20 ficheiros abertos consecutivamente
 
