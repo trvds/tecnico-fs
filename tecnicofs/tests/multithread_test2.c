@@ -1,6 +1,8 @@
 #include "../fs/operations.h"
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
+
 
 #define NUMBER_OF_THREADS 100
 #define SIZE 12
