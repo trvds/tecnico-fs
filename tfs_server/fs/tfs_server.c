@@ -2,85 +2,58 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <stdlib.h>
 
 #define S 1
-#define BUFFER_SIZE 1000
 
-
-
-
-void requestHandler(char buffer[]){
-    char * opcode = strtok(buffer, "|");
-
-    if (strcmp(opcode, "OP_CODE=1") == 0){
-        char client_pipe_name[40] = strtok(NULL, "|");
-
+void requestHandler(int opcode, int session_id){
+    switch (opcode){
+        case 1:
+            // TO DO
+        break;
+        case 2:
+            // TO DO
+        break;
+        case 3:
+            // TO DO
+        break;
+        case 4:
+            // TO DO
+        break;
+        case 5:
+            // TO DO
+        break;
+        case 6:
+            // TO DO        
+        break;
+        case 7:
+            // TO DO
+        break;
+        default:
+            // TO DO
     }
-    else if (strcmp(opcode, "OP_CODE=2") == 0){
-        int session_id = strtok(NULL, "|") - "0";
-
-    }
-    else if (strcmp(opcode, "OP_CODE=3") == 0){
-        int session_id = strtok(NULL, "|") - "0";
-        char name[40] = strtok(NULL, "|");
-        int flags = strtok(NULL, "|") - "0";
-
-    }
-    else if (strcmp(opcode, "OP_CODE=4") == 0){
-        int session_id = strtok(NULL, "|") - "0";
-        int fhandle = strtok(NULL, "|") - "0";
-
-    }
-    else if (strcmp(opcode, "OP_CODE=5") == 0){
-        int session_id = strtok(NULL, "|") - "0";
-        int fhandle = strtok(NULL, "|") - "0";
-        size_t len = (size_t) (strtok(NULL, "|") - "0");
-        char buffer_content[len] = strtok(NULL, "|");
-    }
-    else if (strcmp(opcode, "OP_CODE=6") == 0){
-        int session_id = strtok(NULL, "|") - "0";
-        int fhandle = strtok(NULL, "|") - "0";
-        size_t len = (size_t) (strtok(NULL, "|") - "0");
-
-    }
-    else if (strcmp(opcode, "OP_CODE=7") == 0){
-        int session_id = strtok(NULL, "|") - "0";
-
-    }
-
-    
 }
 
-
-
 int main(int argc, char **argv) {
-    pthread_t tid[S];
-    int thread_counter = 0;
 
     if (argc < 2) {
         printf("Please specify the pathname of the server's pipe.\n");
         return 1;
     }
 
-    char *pipename = argv[1];
-    int fserver, buffer_reader;
-    char buffer[BUFFER_SIZE];
+    static char *pipename;
+    memcpy(pipename, argv[1], strlen(argv[1]));
+    static int fserver;
     printf("Starting TecnicoFS server with pipe called %s\n", pipename);
 
     unlink(pipename);
-    
     if (mkfifo (pipename, 0777) < 0) exit (EXIT_FAILURE);
 
     if ((fserver = open (pipename, O_RDONLY)) < 0) exit(EXIT_FAILURE);
 
     while(1){
-        buffer_reader = read(fserver, buffer, BUFFER_SIZE);
-        requestHandler(buffer);
-
+        // TO DO
     }
 
     close (fserver);
