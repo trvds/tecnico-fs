@@ -69,6 +69,7 @@ int tfs_unmount() {
     // Write and read the pipe
     if (write(fserver, buffer, buffer_size) == -1)
         return -1;
+    free(buffer);
     if (read(fclient, &return_value, sizeof(int)) == -1)
         return -1;
 
