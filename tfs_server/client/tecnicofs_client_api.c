@@ -20,8 +20,6 @@ int tfs_mount(char const *client_pipe_path, char const *server_pipe_path) {
     unlink(client_pipe_path);
     if (mkfifo (client_pipe_path, 0777) < 0)
         return -1;
-    if ((fclient = open (client_pipe_path, O_RDONLY)) < 0)
-        return -1;
     if ((fserver = open (server_pipe_path, O_WRONLY)) < 0)
         return -1;
 
@@ -40,6 +38,8 @@ int tfs_mount(char const *client_pipe_path, char const *server_pipe_path) {
     if (write(fserver, buffer, buffer_size) == -1)
         return -1;   
     free(buffer);
+    if ((fclient = open (client_pipe_path, O_RDONLY)) < 0)
+        return -1;
     if (read(fclient, &session_id, sizeof(int)) == -1)
         return -1;
 
@@ -115,11 +115,7 @@ int tfs_open(char const *name, int flags) {
     if (read(fclient, &fhandle, sizeof(int)) == -1)
         return -1;
 
-    if (fhandle > 0){
-        return fhandle;
-    }
-
-    return -1;
+    return fhandle;
 }
 
 
@@ -149,11 +145,7 @@ int tfs_close(int fhandle) {
     if (read(fclient, &return_value, sizeof(int)) == -1)
         return -1;
 
-    if (return_value == 0){
-        return 0;
-    }
-
-    return -1;
+    return return_value;
 }
 
 
