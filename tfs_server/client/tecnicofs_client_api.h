@@ -4,6 +4,17 @@
 #include "common/common.h"
 #include <sys/types.h>
 
+/* data size (for request's buffer allocation ) */
+enum {
+    TFS_MOUNT_SIZE = TFS_OPCODE_SIZE + TFS_PIPENAME_SIZE,
+    TFS_UNMOUNT_SIZE = TFS_OPCODE_SIZE + TFS_SESSIONID_SIZE,
+    TFS_OPEN_SIZE = TFS_OPCODE_SIZE + TFS_SESSIONID_SIZE + TFS_NAME_SIZE + TFS_FLAGS_SIZE,
+    TFS_CLOSE_SIZE = TFS_OPCODE_SIZE + TFS_SESSIONID_SIZE + TFS_FHANDLE_SIZE,
+    TFS_WRITE_SIZE = TFS_OPCODE_SIZE + TFS_SESSIONID_SIZE + TFS_FHANDLE_SIZE + TFS_LEN_SIZE,
+    TFS_READ_SIZE = TFS_OPCODE_SIZE + TFS_SESSIONID_SIZE + TFS_FHANDLE_SIZE + TFS_LEN_SIZE,
+    TFS_SHUTDOWN_SIZE = TFS_OPCODE_SIZE + TFS_SESSIONID_SIZE
+};
+
 /*
  * Establishes a session with a TecnicoFS server.
  * Input:
@@ -77,5 +88,11 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len);
  * Returns 0 if successful, -1 otherwise.
  */
 int tfs_shutdown_after_all_closed();
+
+/*
+ * Auxiliary function to write on server pipe
+ * Returns 0 if successful, -1 otherwise.
+ */
+int write_on_pipe(void *buffer, size_t len);
 
 #endif /* CLIENT_API_H */

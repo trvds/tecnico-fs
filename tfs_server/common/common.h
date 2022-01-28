@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <stddef.h>
 /* tfs_open flags */
 enum {
     TFS_O_CREAT = 0b001,
@@ -17,6 +18,17 @@ enum {
     TFS_OP_CODE_WRITE = 5,
     TFS_OP_CODE_READ = 6,
     TFS_OP_CODE_SHUTDOWN_AFTER_ALL_CLOSED = 7
+};
+
+/* data size (for client-server requests) */
+enum {
+    TFS_OPCODE_SIZE = sizeof(int),
+    TFS_PIPENAME_SIZE = sizeof(char[40]),
+    TFS_SESSIONID_SIZE = sizeof(int),
+    TFS_NAME_SIZE = sizeof(char[40]),
+    TFS_FLAGS_SIZE = sizeof(int),
+    TFS_FHANDLE_SIZE = sizeof(int),
+    TFS_LEN_SIZE = sizeof(size_t)
 };
 
 #endif /* COMMON_H */
