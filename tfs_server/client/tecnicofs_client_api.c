@@ -76,9 +76,6 @@ int tfs_unmount() {
     free(buffer);
     if (read(fclient, &return_value, TFS_UNMOUNT_RETURN_SIZE) == -1)
         return -1;
-
-    if (return_value != 0)
-        return -1;
     
     session_id = -1;
     // Close pipe
