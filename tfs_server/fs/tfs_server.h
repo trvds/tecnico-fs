@@ -10,14 +10,14 @@
 
 
 #define S 1
-#define CLIENT_PIPE_PATH_SIZE 40
+#define NAME_SIZE 40
 
 /*
  * Buffer entry
  */
 typedef struct {
-    int opcode;
-    char name[CLIENT_PIPE_PATH_SIZE];
+    char opcode;
+    char name[NAME_SIZE];
     int fhandle;
     int flags;
     size_t len;
