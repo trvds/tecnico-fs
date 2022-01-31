@@ -17,6 +17,32 @@ buffer_entry buffer_entry_table[S];
 char *client_pipes_table[S];
 bool server_open = true;
 
+void write_on_pipe(int fclient, void *buffer, size_t len) {
+    size_t written = 0;
+    while (written < len) {
+        ssize_t ret = write(fclient, buffer + written, len - written);
+        if (ret < 0) {
+            fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        written += (size_t)ret;
+    }
+}
+
+
+void read_from_pipe(int fserver, void *buffer, size_t len) {
+    size_t been_read = 0;
+    while (been_read < len) {
+        ssize_t ret = read(fserver, buffer + been_read, len - been_read);
+        if (ret < 0) {
+            fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        been_read += (size_t)ret;
+    }
+}
+
+
 void *requestHandler(void* arg){
     // Get arguments
     int session_id = *((int *) arg);
@@ -32,9 +58,10 @@ void *requestHandler(void* arg){
 
     // Start receiving requests;
     while(server_open){
+        // Temporary variables to store what the thread will write on pipe
         int return_value;
         ssize_t return_len;
-        char *read_buffer = "";
+        char *read_buffer;
         // Lock buffer
         if (pthread_mutex_lock(&buffer->lock) != 0)
             exit(EXIT_FAILURE);
@@ -43,78 +70,62 @@ void *requestHandler(void* arg){
         while (!(buffer->opcode >= TFS_OP_CODE_NULL)){
             pthread_cond_wait(&buffer->cond, &buffer->lock);
         }
-        
+        // If request is awaken and server is going to close returns
+        if (server_open == false){
+            if (pthread_mutex_unlock(&buffer->lock) != 0)
+                exit(EXIT_FAILURE);
+            break;
+        }
         // Read buffer
         switch (buffer->opcode){
             // tfs_mount
             case TFS_OP_CODE_MOUNT:
                 if ((fclient = open(client_pipes_table[session_id], O_WRONLY)) < 0)
                     exit(EXIT_FAILURE);
-                if (write(fclient, &session_id, TFS_MOUNT_RETURN_SIZE) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                write_on_pipe(fclient, &session_id, TFS_MOUNT_RETURN_SIZE);
             break;
             // tfs_unmount
             case TFS_OP_CODE_UNMOUNT:
                 client_pipes_table[session_id] = NULL;
                 return_value = 0;
-                if (write(fclient, &return_value, TFS_UNMOUNT_RETURN_SIZE) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                write_on_pipe(fclient, &return_value, TFS_UNMOUNT_RETURN_SIZE);
                 close(fclient);
             break;
             // tfs_open
             case TFS_OP_CODE_OPEN:
                 return_value = tfs_open(buffer->name, buffer->flags);
-                if (write(fclient, &return_value, TFS_OPEN_RETURN_SIZE) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                write_on_pipe(fclient, &return_value, TFS_OPEN_RETURN_SIZE);
             break;
             //tfs_close
             case TFS_OP_CODE_CLOSE:
                 return_value = tfs_close(buffer->fhandle);
-                if (write(fclient, &return_value, TFS_CLOSE_RETURN_SIZE) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                write_on_pipe(fclient, &return_value, TFS_CLOSE_RETURN_SIZE);
             break;
             // tfs_write
             case TFS_OP_CODE_WRITE:
                 return_len = tfs_write(buffer->fhandle, buffer->buffer, buffer->len);
                 free(buffer->buffer);
-                if (write(fclient, &return_len, TFS_WRITE_RETURN_SIZE) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                write_on_pipe(fclient, &return_len, TFS_WRITE_RETURN_SIZE);
             break;
             // tfs_read
             case TFS_OP_CODE_READ:
-                read_buffer = malloc(sizeof(char[buffer->len]));     
+                //Buffer to store read
+                read_buffer = malloc(sizeof(char[buffer->len]));
                 return_len = tfs_read(buffer->fhandle, read_buffer, buffer->len);
+                // Buffer to store message for pipe
                 void *return_buffer = malloc(TFS_LEN_SIZE + sizeof(char[return_len]));
-                size_t read_buffer_size = 0;
-
-                memcpy(return_buffer + read_buffer_size, &return_len, TFS_LEN_SIZE);
-                read_buffer_size += TFS_LEN_SIZE;
-                memcpy(return_buffer + read_buffer_size, read_buffer, sizeof(char[return_len]));
-                read_buffer_size += sizeof(char[return_len]);
-                if (write(fclient, return_buffer, read_buffer_size) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }                           
+                // Storing message in buffer
+                memcpy(return_buffer, &return_len, TFS_LEN_SIZE);
+                memcpy(return_buffer + TFS_LEN_SIZE, read_buffer, sizeof(char[return_len]));
+                // Write on pipe
+                write_on_pipe(fclient, return_buffer, TFS_LEN_SIZE + sizeof(char[return_len]));           
                 free(read_buffer);
                 free(return_buffer);
             break;
             // tfs_shutdown_after_all_closed
             case TFS_OP_CODE_SHUTDOWN_AFTER_ALL_CLOSED:
                 return_value = tfs_destroy_after_all_closed();
-                if (write(fclient, &return_value, TFS_SHUTDOWN_RETURN_SIZE) < 0) {
-                    fprintf(stderr, "[ERR]: write failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                write_on_pipe(fclient, &return_value, TFS_SHUTDOWN_RETURN_SIZE);
             break;
             default:
                 // deal with errors
@@ -127,7 +138,6 @@ void *requestHandler(void* arg){
             exit(EXIT_FAILURE);
     }
     close(fclient);
-
     pthread_exit(NULL);
 }
 
@@ -195,20 +205,23 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[ERR]: mkfifo failed: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
+
     int fserver;
     if ((fserver = open (pipename, O_RDONLY)) == -1) {
         fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    
+    printf("pipe created\n");
     // Wait for arguments
     while(server_open){
+        // Temporary variables to store what we read from pipe
         char opcode;
         int session_id;
         char client_pipe_path[NAME_SIZE];
         buffer_entry *buffer;
         // Get request opcode from pipe
         ssize_t ret = read(fserver, &opcode, TFS_OPCODE_SIZE);
+
         if (ret == 0) {
             // ret == 0 signals EOF
             close(fserver);
@@ -222,14 +235,12 @@ int main(int argc, char **argv) {
             fprintf(stderr, "[ERR]: opcode read failed: %s\n", strerror(errno));
             exit(EXIT_FAILURE);
         }
+
         switch (opcode){
             // Mount new client pipe
             case TFS_OP_CODE_MOUNT:
                 // Read server pipe
-                if (read(fserver, client_pipe_path, TFS_PIPENAME_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, client_pipe_path, TFS_PIPENAME_SIZE);
                 // Handle client request
                 session_id = addClientPipe(client_pipe_path);
                 if(session_id == -1){
@@ -252,10 +263,7 @@ int main(int argc, char **argv) {
             // Unmount Client
             case TFS_OP_CODE_UNMOUNT:
                 // Read Server pipe
-                if (read(fserver, &session_id, TFS_SESSIONID_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &session_id, TFS_SESSIONID_SIZE);
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
                 // Lock Buffer
@@ -272,10 +280,7 @@ int main(int argc, char **argv) {
             // tfs_open
             case TFS_OP_CODE_OPEN:
                 // Read Server pipe
-                if (read(fserver, &session_id, TFS_SESSIONID_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &session_id, TFS_SESSIONID_SIZE);
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
                 // Lock Buffer
@@ -283,14 +288,8 @@ int main(int argc, char **argv) {
                     exit(EXIT_FAILURE);
                 // Store data in buffer
                 buffer->opcode = opcode;
-                if (read(fserver, &buffer->name, TFS_NAME_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
-                if (read(fserver, &buffer->flags, TFS_FLAGS_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &buffer->name, TFS_NAME_SIZE);
+                read_from_pipe(fserver, &buffer->flags, TFS_FLAGS_SIZE);
                 // Signal thread
                 pthread_cond_signal(&buffer->cond);
                 // Unlock buffer
@@ -300,10 +299,7 @@ int main(int argc, char **argv) {
             // tfs close
             case TFS_OP_CODE_CLOSE:
                 // Read Server pipe
-                if (read(fserver, &session_id, TFS_SESSIONID_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &session_id, TFS_SESSIONID_SIZE);
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
                 // Lock Buffer
@@ -311,10 +307,7 @@ int main(int argc, char **argv) {
                     exit(EXIT_FAILURE);
                 // Store data in buffer
                 buffer->opcode = opcode;
-                if (read(fserver, &buffer->fhandle, TFS_FHANDLE_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &buffer->fhandle, TFS_FHANDLE_SIZE);
                 // Signal thread
                 pthread_cond_signal(&buffer->cond);
                 // Unlock buffer
@@ -324,10 +317,7 @@ int main(int argc, char **argv) {
             // tfs_write
             case TFS_OP_CODE_WRITE:
                 // Read Server pipe
-                if (read(fserver, &session_id, TFS_SESSIONID_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &session_id, TFS_SESSIONID_SIZE);
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
                 // Lock Buffer
@@ -335,19 +325,10 @@ int main(int argc, char **argv) {
                     exit(EXIT_FAILURE);
                 // Store data in buffer
                 buffer->opcode = opcode;
-                if (read(fserver, &buffer->fhandle, TFS_FHANDLE_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
-                if (read(fserver, &buffer->len, TFS_LEN_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &buffer->fhandle, TFS_FHANDLE_SIZE);
+                read_from_pipe(fserver, &buffer->len, TFS_LEN_SIZE);
                 buffer->buffer = malloc(sizeof(char[buffer->len]));
-                if (read(fserver, buffer->buffer, sizeof(char[buffer->len])) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, buffer->buffer, sizeof(char[buffer->len]));
                 // Signal thread
                 pthread_cond_signal(&buffer->cond);
                 // Unlock buffer
@@ -357,10 +338,7 @@ int main(int argc, char **argv) {
             // tfs_read
             case TFS_OP_CODE_READ:
                 // Read Server pipe
-                if (read(fserver, &session_id, TFS_SESSIONID_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &session_id, TFS_SESSIONID_SIZE);
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
                 // Lock Buffer
@@ -368,14 +346,8 @@ int main(int argc, char **argv) {
                     exit(EXIT_FAILURE);
                 // Store data in buffer
                 buffer->opcode = opcode;
-                if (read(fserver, &buffer->fhandle, TFS_FHANDLE_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
-                if (read(fserver, &buffer->len, TFS_LEN_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &buffer->fhandle, TFS_FHANDLE_SIZE);
+                read_from_pipe(fserver, &buffer->len, TFS_LEN_SIZE);
                 // Signal thread
                 pthread_cond_signal(&buffer->cond);
                 // Unlock buffer
@@ -385,10 +357,7 @@ int main(int argc, char **argv) {
             // tfs_shutdown_after_all_closed()
             case TFS_OP_CODE_SHUTDOWN_AFTER_ALL_CLOSED:
                 // Read Server pipe
-                if (read(fserver, &session_id, TFS_SESSIONID_SIZE) == -1){
-                    fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
+                read_from_pipe(fserver, &session_id, TFS_SESSIONID_SIZE);
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
                 // Lock Buffer
@@ -398,7 +367,9 @@ int main(int argc, char **argv) {
                 buffer->opcode = opcode;
                 server_open = false;            
                 // Signal thread
-                pthread_cond_signal(&buffer->cond);
+                for(int i = 0; i < S; i++){
+                    pthread_cond_signal(&buffer_entry_table[i].cond);
+                }
                 // Unlock buffer
                 if (pthread_mutex_unlock(&buffer->lock) != 0)
                     exit(EXIT_FAILURE);

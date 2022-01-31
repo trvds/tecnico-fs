@@ -9,7 +9,7 @@
 #include <pthread.h>
 
 
-#define S 1
+#define S 10
 #define NAME_SIZE 40
 
 /*
