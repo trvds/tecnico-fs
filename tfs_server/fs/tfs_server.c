@@ -12,10 +12,12 @@
 
 
 // Buffers
-buffer_entry buffer_entry_table[S];
+static buffer_entry buffer_entry_table[S];
 // Client Pipe Paths table;
-char *client_pipes_table[S];
-bool server_open = true;
+static char *client_pipes_table[S];
+pthread_mutex_t client_session_table_lock;
+static bool server_open = true;
+static int session_id_shutdown;
 
 void write_on_pipe(int fclient, void *buffer, size_t len) {
     size_t written = 0;
@@ -63,18 +65,12 @@ void *requestHandler(void* arg){
         ssize_t return_len;
         char *read_buffer;
         // Lock buffer
+
         if (pthread_mutex_lock(&buffer->lock) != 0)
             exit(EXIT_FAILURE);
-
         // Wait for signal that we can read the buffer
-        while (!(buffer->opcode >= TFS_OP_CODE_NULL)){
+        while (!(buffer->opcode > TFS_OP_CODE_NULL) && server_open){
             pthread_cond_wait(&buffer->cond, &buffer->lock);
-        }
-        // If request is awaken and server is going to close returns
-        if (server_open == false){
-            if (pthread_mutex_unlock(&buffer->lock) != 0)
-                exit(EXIT_FAILURE);
-            break;
         }
         // Read buffer
         switch (buffer->opcode){
@@ -86,7 +82,7 @@ void *requestHandler(void* arg){
             break;
             // tfs_unmount
             case TFS_OP_CODE_UNMOUNT:
-                client_pipes_table[session_id] = NULL;
+                removeClientPipe(session_id);
                 return_value = 0;
                 write_on_pipe(fclient, &return_value, TFS_UNMOUNT_RETURN_SIZE);
                 close(fclient);
@@ -125,10 +121,13 @@ void *requestHandler(void* arg){
             // tfs_shutdown_after_all_closed
             case TFS_OP_CODE_SHUTDOWN_AFTER_ALL_CLOSED:
                 return_value = tfs_destroy_after_all_closed();
+                if (return_value == 0){
+                    server_open = false;
+                    session_id_shutdown = session_id;
+                }
                 write_on_pipe(fclient, &return_value, TFS_SHUTDOWN_RETURN_SIZE);
             break;
             default:
-                // deal with errors
             break;
         }
         buffer->opcode = TFS_OP_CODE_NULL;
@@ -138,14 +137,18 @@ void *requestHandler(void* arg){
             exit(EXIT_FAILURE);
     }
     close(fclient);
-    pthread_exit(NULL);
+    return NULL;
 }
 
 
 int addClientPipe(char *client_pipe_path){
+    if (pthread_mutex_lock(&client_session_table_lock) != 0)
+            exit(EXIT_FAILURE);
     //Check entry with same client path
     for(int i = 0; i < S; i++){
         if (client_pipes_table[i] != NULL && strcmp(client_pipes_table[i], client_pipe_path) == 0){
+            if (pthread_mutex_unlock(&client_session_table_lock) != 0)
+                exit(EXIT_FAILURE);
             return i;
         }
     }
@@ -153,11 +156,27 @@ int addClientPipe(char *client_pipe_path){
     for(int i = 0; i < S; i++){
         if(client_pipes_table[i] == NULL){
             // Store pipe path on pipe table
-            client_pipes_table[i] = client_pipe_path;
+            client_pipes_table[i] = malloc(TFS_PIPENAME_SIZE);
+            memcpy(client_pipes_table[i], client_pipe_path, TFS_PIPENAME_SIZE);
+            if (pthread_mutex_unlock(&client_session_table_lock) != 0)
+                exit(EXIT_FAILURE);
             return i;
         }
     }
+    if (pthread_mutex_unlock(&client_session_table_lock) != 0)
+            exit(EXIT_FAILURE);
     return -1;
+}
+
+
+void removeClientPipe(int session_id){
+    if (pthread_mutex_lock(&client_session_table_lock) != 0)
+            exit(EXIT_FAILURE);
+    free(client_pipes_table[session_id]);
+    client_pipes_table[session_id] = NULL;
+    if (pthread_mutex_unlock(&client_session_table_lock) != 0)
+            exit(EXIT_FAILURE);
+    return;
 }
 
 
@@ -165,6 +184,8 @@ int addClientPipe(char *client_pipe_path){
 int main(int argc, char **argv) {
     // Worker threads
     pthread_t worker_thread[S];
+    pthread_mutex_init(&client_session_table_lock, NULL);
+
 
     // Initialize client_pipe_table
     for(int i = 0; i < S; i++){
@@ -211,7 +232,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    printf("pipe created\n");
     // Wait for arguments
     while(server_open){
         // Temporary variables to store what we read from pipe
@@ -243,9 +263,16 @@ int main(int argc, char **argv) {
                 read_from_pipe(fserver, client_pipe_path, TFS_PIPENAME_SIZE);
                 // Handle client request
                 session_id = addClientPipe(client_pipe_path);
+                // Server Capacity is full, sends -1 to signal that mount wasn't successful
                 if(session_id == -1){
-                    fprintf(stderr, "[ERR]: addClientpipe failed: %s\n", strerror(errno));
-                    exit(EXIT_FAILURE);
+                    int fclient;
+                    if ((fclient = open(client_pipe_path, O_WRONLY)) < 0) {
+                        fprintf(stderr, "[ERR]: open failed: %s\n", strerror(errno));
+                        exit(EXIT_FAILURE);
+                    }
+                    write_on_pipe(fclient, &session_id, TFS_MOUNT_RETURN_SIZE);
+                    close(fclient);
+                    break;
                 }
                 // Get buffer
                 buffer = &buffer_entry_table[session_id];
@@ -365,11 +392,8 @@ int main(int argc, char **argv) {
                     exit(EXIT_FAILURE);
                 // Store data in buffer
                 buffer->opcode = opcode;
-                server_open = false;            
                 // Signal thread
-                for(int i = 0; i < S; i++){
-                    pthread_cond_signal(&buffer_entry_table[i].cond);
-                }
+                pthread_cond_signal(&buffer->cond);
                 // Unlock buffer
                 if (pthread_mutex_unlock(&buffer->lock) != 0)
                     exit(EXIT_FAILURE);
@@ -379,6 +403,15 @@ int main(int argc, char **argv) {
                 // TO DO error checking
             break;
         }
+    }
+
+
+    for(int i = 0; i < S; i++){
+        if (pthread_mutex_lock(&buffer_entry_table[i].lock) != 0)
+            exit(EXIT_FAILURE);
+        pthread_cond_signal(&buffer_entry_table[i].cond);
+        if (pthread_mutex_unlock(&buffer_entry_table[i].lock) != 0)
+            exit(EXIT_FAILURE);
     }
 
     for(int i = 0; i < S; i++){
