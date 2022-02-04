@@ -41,9 +41,13 @@ else
   CFLAGS += -O3
 endif
 
+LDFLAGS = -pthread
 
 
-LDFLAGS = -pthread -fsanitize=thread
+ifeq ($(strip $(FSANITIZE)), yes)
+	CFLAGS += -fsanitize=thread
+	LDFLAGS += -fsanitize=thread
+endif
 
 # A phony target is one that is not really the name of a file
 # https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
