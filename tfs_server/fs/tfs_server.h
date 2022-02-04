@@ -11,6 +11,7 @@
 
 #define MAX_SESSIONS_AMOUNT 20
 #define NAME_SIZE 40
+#define SESSION_BUFFER_AMOUNT 1
 
 /*
  * Buffer entry
@@ -185,5 +186,10 @@ void signal_cond(pthread_cond_t *cond);
 
 /* pthread_cond_wait wrapper for error checking */
 void wait_cond(pthread_cond_t *cond, pthread_mutex_t *lock);
+
+/* Other function wrappers */
+
+/* Increment a buffer counter in the buffer counter table */
+void increment_buffer_counter(int session_id);
 
 #endif // TFS_SERVER

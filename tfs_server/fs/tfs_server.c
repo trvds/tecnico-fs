@@ -12,10 +12,10 @@
 
 
 // Buffers
-static buffer_entry buffer_entry_table[MAX_SESSIONS_AMOUNT];
+static buffer_entry buffer_entry_table[MAX_SESSIONS_AMOUNT][SESSION_BUFFER_AMOUNT];
 static pthread_mutex_t buffer_lock_table[MAX_SESSIONS_AMOUNT];
 static pthread_cond_t buffer_cond_table[MAX_SESSIONS_AMOUNT];
-
+static int buffers_counter[MAX_SESSIONS_AMOUNT] = {0};
 // Client Pipe Paths table;
 static char *client_pipes_table[MAX_SESSIONS_AMOUNT];
 static pthread_mutex_t client_session_table_lock;
@@ -122,10 +122,10 @@ void *requestHandler(void* arg){
     int session_id = *((int *) arg);
     free(arg);
 
-    buffer_entry *buffer = &buffer_entry_table[session_id];
     pthread_mutex_t *lock = &buffer_lock_table[session_id];
     pthread_cond_t *cond = &buffer_cond_table[session_id];
 
+    int buffer_counter = 0;
     // Open client pipe
     int fclient = -1;
 
@@ -133,6 +133,7 @@ void *requestHandler(void* arg){
     while(check_server_open()){
         // Lock buffer
         lock_mutex(lock);
+        buffer_entry *buffer = &buffer_entry_table[session_id][buffer_counter];
         // Wait for signal that we can read the buffer
         while (!(buffer->opcode > TFS_OP_CODE_NULL) && check_server_open()){
             pthread_cond_wait(cond, lock);
@@ -165,6 +166,9 @@ void *requestHandler(void* arg){
         }
         buffer->opcode = TFS_OP_CODE_NULL;
         unlock_mutex(lock);
+        buffer_counter++;
+        if(buffer_counter >= SESSION_BUFFER_AMOUNT)
+            buffer_counter = 0;
     }
 
     if(fclient > 0)
@@ -185,6 +189,10 @@ void server_init(pthread_t *receiver_thread, pthread_t worker_thread[MAX_SESSION
 
     // Initialize buffers' mutexes and conditional variables
     for(int i = 0; i < MAX_SESSIONS_AMOUNT; i++){
+        for(int j = 0; j < SESSION_BUFFER_AMOUNT; j++){
+            buffer_entry *buffer = &buffer_entry_table[i][j];
+            buffer->opcode = TFS_OP_CODE_NULL;
+        }
         if (pthread_mutex_init(&buffer_lock_table[i], NULL) == -1)
             exit(EXIT_FAILURE);
         if (pthread_cond_init(&buffer_cond_table[i], NULL) == -1)
@@ -293,9 +301,10 @@ void read_mount(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_MOUNT;
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -322,9 +331,10 @@ void read_unmount(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_UNMOUNT;
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -352,11 +362,12 @@ void read_open(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_OPEN;
     read_from_pipe(fd, &buffer->name, TFS_NAME_SIZE);
     read_from_pipe(fd, &buffer->flags, TFS_FLAGS_SIZE);
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -381,10 +392,11 @@ void read_close(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_CLOSE;
     read_from_pipe(fd, &buffer->fhandle, TFS_FHANDLE_SIZE);
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -409,13 +421,14 @@ void read_write(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_WRITE;
     read_from_pipe(fd, &buffer->fhandle, TFS_FHANDLE_SIZE);
     read_from_pipe(fd, &buffer->len, TFS_LEN_SIZE);
     buffer->buffer = malloc(sizeof(char[buffer->len]));
     read_from_pipe(fd, buffer->buffer, sizeof(char[buffer->len]));
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -441,11 +454,12 @@ void read_read(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_READ;
     read_from_pipe(fd, &buffer->fhandle, TFS_FHANDLE_SIZE);
     read_from_pipe(fd, &buffer->len, TFS_LEN_SIZE);
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -478,9 +492,10 @@ void read_shutdown(int fd){
     // Lock Buffer
     lock_mutex(&buffer_lock_table[session_id]);
     // Get buffer
-    buffer_entry *buffer = &buffer_entry_table[session_id];
+    buffer_entry *buffer = &buffer_entry_table[session_id][buffers_counter[session_id]];
     // Store data in buffer
     buffer->opcode = TFS_OP_CODE_SHUTDOWN_AFTER_ALL_CLOSED;
+    increment_buffer_counter(session_id);
     // Signal thread
     signal_cond(&buffer_cond_table[session_id]);
     // Unlock buffer
@@ -597,5 +612,13 @@ void signal_cond(pthread_cond_t *cond){
 void wait_cond(pthread_cond_t *cond, pthread_mutex_t *lock){
     if (pthread_cond_wait(cond, lock) == -1)
         exit(EXIT_FAILURE);
+    return;
+}
+
+
+void increment_buffer_counter(int session_id){
+    buffers_counter[session_id] = buffers_counter[session_id] + 1;
+    if (buffers_counter[session_id] >= SESSION_BUFFER_AMOUNT)
+        buffers_counter[session_id] = 0;
     return;
 }
